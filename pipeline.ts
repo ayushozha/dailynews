@@ -19,6 +19,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import Parser from 'rss-parser';
 import sharp from 'sharp';
 import ffmpegPath from 'ffmpeg-static';
 
@@ -31,12 +32,12 @@ const {
   LLM_BASE_URL,
   LLM_MODEL,
   MINIMAX_API_KEY,
-  VAPI_API_KEY,
 } = process.env;
 
 const MINIMAX_BASE = 'https://api.minimaxi.chat/v1';
-const VAPI_TTS_URL = 'https://api.vapi.ai/tts'; // placeholder — adjust to your TTS provider
+const MINIMAX_TTS_BASE = 'https://api.minimax.io';
 const OUTPUT_DIR = join(process.cwd(), 'output');
+const PIPELINE_MAX_STORIES = Number(process.env.PIPELINE_MAX_STORIES ?? 5);
 
 interface PromptPackage {
   story_id: string;
@@ -57,7 +58,7 @@ function requireEnv(name: string, val: string | undefined): string {
 }
 
 function slugify(s: string): string {
-  return s
+  return String(s)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -72,14 +73,25 @@ async function downloadTo(url: string, path: string): Promise<void> {
 }
 
 // ---------- step 1: headlines ----------
+async function fromGoogleNewsRss(): Promise<string[]> {
+  const rss = new Parser({ timeout: 10_000 });
+  const feed = await rss.parseURL('https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en');
+  return (feed.items ?? []).map((i) => i.title ?? '').filter(Boolean).slice(0, 5);
+}
+
 async function getHeadlines(): Promise<string[]> {
-  const key = requireEnv('NEWS_API_KEY', NEWS_API_KEY);
-  const url = `https://newsapi.org/v2/top-headlines?country=us&pageSize=5&apiKey=${key}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`NewsAPI ${res.status}: ${await res.text()}`);
-  const json = (await res.json()) as { articles?: { title: string }[] };
-  const headlines = (json.articles ?? []).map((a) => a.title).filter(Boolean).slice(0, 5);
-  if (headlines.length === 0) throw new Error('NewsAPI returned no headlines');
+  if (NEWS_API_KEY) {
+    const url = `https://newsapi.org/v2/top-headlines?country=us&pageSize=5&apiKey=${NEWS_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`NewsAPI ${res.status}: ${await res.text()}`);
+    const json = (await res.json()) as { articles?: { title: string }[] };
+    const headlines = (json.articles ?? []).map((a) => a.title).filter(Boolean).slice(0, 5);
+    if (headlines.length > 0) return headlines;
+  }
+
+  console.log('   (NewsAPI unavailable — falling back to Google News RSS)');
+  const headlines = await fromGoogleNewsRss();
+  if (headlines.length === 0) throw new Error('No headlines from NewsAPI or RSS');
   return headlines;
 }
 
@@ -212,26 +224,28 @@ async function generateVideo(pkg: PromptPackage, imagePath: string, outPath: str
   await downloadTo(downloadUrl, outPath);
 }
 
-// ---------- step 3d: Vapi TTS ----------
+// ---------- step 3d: MiniMax TTS ----------
 async function generateVoiceover(pkg: PromptPackage, outPath: string): Promise<void> {
-  const key = requireEnv('VAPI_API_KEY', VAPI_API_KEY);
-  const res = await fetch(VAPI_TTS_URL, {
+  const key = requireEnv('MINIMAX_API_KEY', MINIMAX_API_KEY);
+  const voiceId = process.env.MINIMAX_VOICE_ID ?? 'English_expressive_narrator';
+  const res = await fetch(`${MINIMAX_TTS_BASE}/v1/t2a_v2`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ text: pkg.voiceover_script }),
+    body: JSON.stringify({
+      model: 'speech-2.8-turbo',
+      text: pkg.voiceover_script,
+      stream: false,
+      language_boost: 'English',
+      output_format: 'hex',
+      voice_setting: { voice_id: voiceId, speed: 1, vol: 1, pitch: 0 },
+      audio_setting: { sample_rate: 32000, bitrate: 128000, format: 'mp3', channel: 1 },
+    }),
   });
-  if (!res.ok) throw new Error(`Vapi TTS ${res.status}: ${await res.text()}`);
-
-  // Accept either raw audio bytes or a JSON {url}/{audioUrl} response.
-  const ct = res.headers.get('content-type') ?? '';
-  if (ct.includes('application/json')) {
-    const json = (await res.json()) as { url?: string; audioUrl?: string };
-    const url = json.url ?? json.audioUrl;
-    if (!url) throw new Error(`Vapi TTS: no audio url in response: ${JSON.stringify(json)}`);
-    await downloadTo(url, outPath);
-  } else {
-    await writeFile(outPath, Buffer.from(await res.arrayBuffer()));
-  }
+  if (!res.ok) throw new Error(`MiniMax TTS ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { data?: { audio?: string } };
+  const hex = json.data?.audio;
+  if (!hex) throw new Error(`MiniMax TTS: no audio in response: ${JSON.stringify(json)}`);
+  await writeFile(outPath, Buffer.from(hex, 'hex'));
 }
 
 // ---------- step 3e: merge audio + video ----------
@@ -259,7 +273,7 @@ async function main() {
   console.log(`   got ${packages.length} packages`);
 
   let succeeded = 0;
-  for (const pkg of packages) {
+  for (const pkg of packages.slice(0, PIPELINE_MAX_STORIES)) {
     const dir = join(OUTPUT_DIR, pkg.story_id);
     console.log(`\n=== ${pkg.story_id} :: ${pkg.headline} ===`);
     try {
@@ -275,7 +289,7 @@ async function main() {
       await generateVideo(pkg, join(dir, 'captioned.png'), join(dir, 'clip.mp4'));
       console.log('   ...video done            ');
 
-      console.log('   [4/5] Vapi voiceover...');
+      console.log('   [4/5] MiniMax voiceover...');
       await generateVoiceover(pkg, join(dir, 'vo.mp3'));
 
       console.log('   [5/5] ffmpeg merge...');
