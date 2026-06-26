@@ -57,9 +57,26 @@ export async function runPersonA(dryRun = false): Promise<RunAResult> {
 
 // Vercel function entry. Fire-and-forget is recommended for long runs (see DESIGN.md §8);
 // run-a is short (crawl + a few LLM calls), so we run inline and return the summary.
-export async function GET(): Promise<Response> {
-  const result = await runPersonA();
+async function handleRun(reqDry = false): Promise<Response> {
+  const result = await runPersonA(reqDry);
   return Response.json(result, { status: 200 });
+}
+
+export async function GET(req?: Request): Promise<Response> {
+  const url = req?.url ? new URL(req.url) : null;
+  const dry = url?.searchParams.get('dry') === '1';
+  return handleRun(dry);
+}
+
+export async function POST(req: Request): Promise<Response> {
+  let dry = false;
+  try {
+    const body = (await req.json()) as { dry?: boolean };
+    dry = Boolean(body.dry);
+  } catch {
+    dry = false;
+  }
+  return handleRun(dry);
 }
 
 // Local CLI

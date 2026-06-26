@@ -9,11 +9,13 @@ import type { PromptPackage, Status } from './types';
 
 const key = (storyId: string) => `prompt:${storyId}`;
 const PENDING_INDEX = 'index:pending';
+const ALL_INDEX = 'index:all';
 
 // 🟦 A — write a new prompt package and register it in the pending index.
 export async function enqueue(pkg: PromptPackage): Promise<void> {
   await kv.set(key(pkg.story_id), pkg);
   await kv.sadd(PENDING_INDEX, pkg.story_id);
+  await kv.sadd(ALL_INDEX, pkg.story_id);
 }
 
 // 🟥 B — list story ids still awaiting generation (no full keyspace scan).
@@ -48,4 +50,12 @@ export async function listByStatus(status: Status): Promise<PromptPackage[]> {
   const ids = await listPending();
   const packages = await Promise.all(ids.map((id) => get(id)));
   return packages.filter((pkg): pkg is PromptPackage => pkg !== null && pkg.status === status);
+}
+
+export async function listAll(): Promise<PromptPackage[]> {
+  const ids = (await kv.smembers<string[]>(ALL_INDEX)) ?? [];
+  const packages = await Promise.all(ids.map((id) => get(id)));
+  return packages
+    .filter((pkg): pkg is PromptPackage => pkg !== null)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
