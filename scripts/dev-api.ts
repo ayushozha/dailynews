@@ -11,6 +11,8 @@ import { runPersonA } from '../api/run-a';
 import * as statusRoute from '../api/status';
 import * as storiesRoute from '../api/stories';
 import { generateMeme } from '../generation/generate_meme';
+import * as searchNewsRoute from '../api/search-news';
+import type { ScoredStory } from '../shared/types';
 
 const PORT = Number(process.env.API_PORT ?? 3000);
 
@@ -23,6 +25,27 @@ async function readBody(req: IncomingMessage): Promise<string> {
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
+}
+
+function normalizeStories(value: unknown): ScoredStory[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const stories = value
+    .slice(0, 5)
+    .map((story) => {
+      const s = story && typeof story === 'object' ? (story as Partial<ScoredStory>) : {};
+      return {
+        title: String(s.title ?? '').slice(0, 300),
+        url: String(s.url ?? '').slice(0, 1000),
+        source: String(s.source ?? 'preview').slice(0, 80),
+        published_at: String(s.published_at ?? new Date().toISOString()).slice(0, 80),
+        summary: String(s.summary ?? '').slice(0, 1000),
+        relevance: Number.isFinite(Number(s.relevance)) ? Number(s.relevance) : 0,
+      };
+    })
+    .filter((story) => story.title && story.url);
+
+  return stories.length >= 5 ? stories : undefined;
 }
 
 async function serveLocalAsset(url: URL, res: ServerResponse) {
@@ -81,12 +104,42 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (path === '/api/search-news' && req.method === 'GET') {
+      const response = await searchNewsRoute.GET(
+        new Request(`http://localhost${url.search}`, { method: 'GET' }),
+      );
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(await response.text());
+      return;
+    }
+
     if (path === '/api/generate-meme' && req.method === 'POST') {
+      let query: string | undefined;
+      let stories: ScoredStory[] | undefined;
+      try {
+        const body = await readBody(req);
+        if (body) {
+          const parsed = JSON.parse(body) as { query?: string; stories?: unknown };
+          query = parsed.query?.trim();
+          stories = normalizeStories(parsed.stories);
+        }
+      } catch {
+        /* empty body is fine */
+      }
+
+      if (!query) {
+        return sendJson(res, 400, {
+          error: 'query_required',
+          message: 'Search for a topic first, then generate a meme from those 5 headlines.',
+        });
+      }
+
       sendJson(res, 202, {
         ok: true,
-        message: 'Fetching 5 related headlines and cooking a mega-meme with MiniMax…',
+        query,
+        message: `Scraping 5 live headlines for "${query}" and cooking a mega-meme with MiniMax…`,
       });
-      generateMeme()
+      generateMeme({ query, stories })
         .then((r) => console.log('[generate-meme] done', r))
         .catch((err) => console.error('[generate-meme] error', err));
       return;
@@ -103,5 +156,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`▶ DailyNews dev API → http://127.0.0.1:${PORT}`);
-  console.log('  Routes: /api/status /api/stories /api/generate-meme /api/local-asset');
+  console.log('  Routes: /api/status /api/stories /api/search-news /api/generate-meme /api/local-asset');
 });
