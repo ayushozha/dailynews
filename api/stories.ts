@@ -3,13 +3,16 @@ import { listLocalOutput } from '../shared/local_output';
 import type { PromptPackage } from '../shared/types';
 
 async function loadStories(): Promise<{ stories: PromptPackage[]; source: 'kv' | 'local' }> {
+  const hasKv = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
   try {
     const stories = await listAll();
-    if (stories.length > 0) return { stories, source: 'kv' };
+    if (stories.length > 0) return { stories, source: hasKv ? 'kv' : 'local' };
   } catch {
-    // KV not configured — fall back to local ./output
+    // fall through
   }
-  return { stories: await listLocalOutput(), source: 'local' };
+  const local = await listLocalOutput();
+  if (local.length > 0) return { stories: local, source: 'local' };
+  return { stories: [], source: hasKv ? 'kv' : 'local' };
 }
 
 export async function GET(): Promise<Response> {

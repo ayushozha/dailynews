@@ -10,7 +10,7 @@ import { join, extname } from 'node:path';
 import { runPersonA } from '../api/run-a';
 import * as statusRoute from '../api/status';
 import * as storiesRoute from '../api/stories';
-import { drainQueue } from '../generation/pipeline';
+import { generateMeme } from '../generation/generate_meme';
 
 const PORT = Number(process.env.API_PORT ?? 3000);
 
@@ -81,11 +81,14 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
-    if (path === '/api/run-b' && (req.method === 'GET' || req.method === 'POST')) {
-      sendJson(res, 202, { ok: true, route: '/api/run-b', message: 'generation pipeline accepted' });
-      drainQueue()
-        .then(({ summary }) => console.log('[run-b] ok', summary))
-        .catch((err) => console.error('[run-b] error', err));
+    if (path === '/api/generate-meme' && req.method === 'POST') {
+      sendJson(res, 202, {
+        ok: true,
+        message: 'Fetching 5 related headlines and cooking a mega-meme with MiniMax…',
+      });
+      generateMeme()
+        .then((r) => console.log('[generate-meme] done', r))
+        .catch((err) => console.error('[generate-meme] error', err));
       return;
     }
 
@@ -100,5 +103,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`▶ DailyNews dev API → http://127.0.0.1:${PORT}`);
-  console.log('  Routes: /api/status /api/stories /api/run-a /api/run-b /api/local-asset');
+  console.log('  Routes: /api/status /api/stories /api/generate-meme /api/local-asset');
 });

@@ -43,6 +43,15 @@ export function StoryCard({ story }: { story: Story }) {
             “{story.caption_top}” / “{story.caption_bottom}”
           </p>
         )}
+        {story.source_headlines && story.source_headlines.length > 0 && (
+          <ul className="space-y-1 border-l-2 border-sky/30 pl-3 text-xs text-muted-foreground">
+            {story.source_headlines.map((h) => (
+              <li key={h} className="line-clamp-1">
+                {h}
+              </li>
+            ))}
+          </ul>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center gap-2">

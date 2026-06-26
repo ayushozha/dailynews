@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   Clapperboard,
+  Flame,
   Loader2,
   Newspaper,
-  Play,
   RefreshCw,
   Sparkles,
   Zap,
@@ -19,8 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   fetchStatus,
   fetchStories,
-  triggerRunA,
-  triggerRunB,
+  generateMeme,
   type DashboardStatus,
   type Story,
 } from '@/lib/api';
@@ -30,9 +29,7 @@ export default function App() {
   const [stories, setStories] = useState<Story[]>([]);
   const [source, setSource] = useState<'kv' | 'local'>('local');
   const [loading, setLoading] = useState(true);
-  const [runningA, setRunningA] = useState(false);
-  const [runningB, setRunningB] = useState(false);
-  const [dryRun, setDryRun] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -52,45 +49,35 @@ export default function App() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 8000);
+    const ms = generating ? 4000 : 8000;
+    const id = setInterval(refresh, ms);
     return () => clearInterval(id);
-  }, [refresh]);
+  }, [refresh, generating]);
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
+    const t = setTimeout(() => setToast(null), 5000);
     return () => clearTimeout(t);
   }, [toast]);
 
-  const onRunA = async () => {
-    setRunningA(true);
+  const onGenerateMeme = async () => {
+    setGenerating(true);
+    setError(null);
     try {
-      const result = await triggerRunA(dryRun);
-      setToast(
-        dryRun
-          ? `Dry run: would enqueue ${result.enqueued} stories from ${result.crawled} crawled`
-          : `Enqueued ${result.enqueued} stories`,
-      );
+      const result = await generateMeme();
+      setToast(result.message);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Run A failed');
-    } finally {
-      setRunningA(false);
+      setError(e instanceof Error ? e.message : 'Meme generation failed');
+      setGenerating(false);
     }
   };
 
-  const onRunB = async () => {
-    setRunningB(true);
-    try {
-      await triggerRunB();
-      setToast('Generation pipeline accepted — processing in background');
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Run B failed');
-    } finally {
-      setRunningB(false);
-    }
-  };
+  useEffect(() => {
+    if (!generating) return;
+    const pending = stories.some((s) => s.status !== 'published');
+    if (!pending && stories.length > 0) setGenerating(false);
+  }, [stories, generating]);
 
   const budgetPct = status
     ? Math.min(100, Math.round((status.spend_usd / status.budget_usd) * 100))
@@ -114,8 +101,8 @@ export default function App() {
               Daily<span className="text-sky underline decoration-coral decoration-4 underline-offset-4">News</span>
             </h1>
             <p className="max-w-xl text-lg text-muted-foreground">
-              We read the news so you can doomscroll memes. Crawl headlines, score the chaos, ship
-              captioned videos — automatically every morning.
+              Grab 5 related headlines, fuse them into one unhinged mega-meme, ship it with MiniMax
+              Hailuo + TTS. One button. Maximum chaos.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -143,8 +130,8 @@ export default function App() {
 
       <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-fade-up">
         {[
-          { label: 'Total stories', value: status?.total_stories ?? '—', icon: Newspaper },
-          { label: 'In pipeline', value: status?.pending_count ?? '—', icon: Activity },
+          { label: 'Total memes', value: status?.total_stories ?? '—', icon: Newspaper },
+          { label: 'Cooking', value: status?.pending_count ?? '—', icon: Activity },
           { label: 'Published', value: status?.published_count ?? '—', icon: Clapperboard },
           { label: 'Today spend', value: status ? `$${status.spend_usd.toFixed(2)}` : '—', icon: Zap },
         ].map(({ label, value, icon: Icon }) => (
@@ -163,36 +150,41 @@ export default function App() {
       </section>
 
       <section className="mb-10 grid gap-6 lg:grid-cols-3 animate-fade-up">
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-2 border-sky/20 shadow-editorial">
           <CardHeader>
-            <CardTitle>Pipeline controls</CardTitle>
+            <CardTitle>Make today&apos;s meme</CardTitle>
             <CardDescription>
-              API keys stay server-side in <code className="rounded bg-muted px-1">.env</code> — the
-              UI only triggers routes.
+              Crawls the news, picks 5 related stories, writes a super-funny combined meme, then
+              generates image + video + voiceover with the latest MiniMax models. Keys stay in{' '}
+              <code className="rounded bg-muted px-1">.env</code>.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-3">
-              <Button onClick={onRunA} disabled={runningA || runningB} size="lg">
-                {runningA ? <Loader2 className="h-4 w-4 animate-spin" /> : <Newspaper className="h-4 w-4" />}
-                Run Person A
-              </Button>
               <Button
-                variant={dryRun ? 'accent' : 'outline'}
-                onClick={() => setDryRun((v) => !v)}
-                disabled={runningA || runningB}
+                onClick={onGenerateMeme}
+                disabled={generating}
+                size="lg"
+                variant="accent"
+                className="min-w-[220px]"
               >
-                Dry run {dryRun ? 'ON' : 'OFF'}
-              </Button>
-              <Button onClick={onRunB} disabled={runningA || runningB} variant="accent" size="lg">
-                {runningB ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                Run Person B
+                {generating ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Flame className="h-5 w-5" />
+                )}
+                {generating ? 'Cooking mega-meme…' : 'Generate Mega-Meme'}
               </Button>
               <Button variant="ghost" onClick={refresh} disabled={loading}>
                 <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
                 Refresh
               </Button>
             </div>
+            {generating && (
+              <p className="text-sm text-muted-foreground">
+                This takes 2–4 minutes — polling for your new video…
+              </p>
+            )}
             <Separator />
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
@@ -210,22 +202,18 @@ export default function App() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-sky" />
-              Status board
+              Pipeline
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {status &&
-              (Object.entries(status.counts) as [keyof typeof status.counts, number][]).map(
-                ([key, count]) => (
-                  <div key={key} className="flex justify-between rounded-lg bg-white/80 px-3 py-2">
-                    <span className="capitalize text-muted-foreground">{key.replace('_', ' ')}</span>
-                    <span className="font-semibold">{count}</span>
-                  </div>
-                ),
-              )}
-            <p className="pt-2 text-xs text-muted-foreground">
-              Updated {status ? new Date(status.updated_at).toLocaleTimeString() : '—'}
-            </p>
+          <CardContent className="space-y-2 text-sm">
+            {['Crawl headlines', 'Pick 5 related', 'LLM mega-joke', 'MiniMax image', 'Hailuo video', 'TTS + merge'].map(
+              (step) => (
+                <div key={step} className="flex items-center gap-2 rounded-lg bg-white/80 px-3 py-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky" />
+                  {step}
+                </div>
+              ),
+            )}
           </CardContent>
         </Card>
       </section>
@@ -233,7 +221,7 @@ export default function App() {
       <Tabs defaultValue="all" className="animate-fade-up">
         <TabsList>
           <TabsTrigger value="all">All ({stories.length})</TabsTrigger>
-          <TabsTrigger value="progress">In progress ({inProgress.length})</TabsTrigger>
+          <TabsTrigger value="progress">Cooking ({inProgress.length})</TabsTrigger>
           <TabsTrigger value="published">Published ({published.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="all">
@@ -264,11 +252,11 @@ function StoryGrid({ stories, loading }: { stories: Story[]; loading: boolean })
     return (
       <Card className="mt-4 border-dashed">
         <CardContent className="flex flex-col items-center gap-3 py-16 text-center">
-          <Newspaper className="h-10 w-10 text-muted-foreground" />
-          <p className="font-display text-xl">No stories yet</p>
+          <Flame className="h-10 w-10 text-coral" />
+          <p className="font-display text-xl">No memes yet</p>
           <p className="max-w-md text-sm text-muted-foreground">
-            Hit <strong>Run Person A</strong> to crawl headlines, or run <code>npm start</code> locally
-            to populate <code>./output/</code>.
+            Hit <strong>Generate Mega-Meme</strong> — we&apos;ll find 5 related headlines and turn
+            them into something unforgivably funny.
           </p>
         </CardContent>
       </Card>

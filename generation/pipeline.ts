@@ -98,6 +98,47 @@ export async function processStory(storyId: string): Promise<PublishSummaryItem>
   }
 }
 
+/** Advance through every stage until published or failure. */
+export async function processStoryToCompletion(storyId: string): Promise<PublishSummaryItem> {
+  let pkg = await queue.get(storyId);
+  if (!pkg) {
+    return {
+      story_id: storyId,
+      headline: storyId,
+      output_url: '',
+      status: 'failed',
+      error: 'story_not_found',
+    };
+  }
+
+  try {
+    while (pkg.status !== 'published') {
+      const before = pkg.status;
+      if (pkg.status === 'pending') pkg = await processPending(pkg);
+      else if (pkg.status === 'image_done') pkg = await processImageDone(pkg);
+      else if (pkg.status === 'video_done') pkg = await processVideoDone(pkg);
+      else break;
+      if (pkg.status === before) break;
+    }
+
+    return {
+      story_id: pkg.story_id,
+      headline: pkg.headline,
+      output_url: pkg.output_url,
+      status: pkg.status === 'published' ? 'published' : 'failed',
+      error: pkg.status === 'published' ? undefined : `stuck_at_${pkg.status}`,
+    };
+  } catch (error) {
+    return {
+      story_id: pkg.story_id,
+      headline: pkg.headline,
+      output_url: pkg.output_url ?? '',
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'unknown_error',
+    };
+  }
+}
+
 export async function drainQueue(): Promise<{
   items: PublishSummaryItem[];
   summary: Awaited<ReturnType<typeof buildSummary>>;

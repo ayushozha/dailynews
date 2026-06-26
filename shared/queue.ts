@@ -5,14 +5,23 @@
 // via update(). Re-running is idempotent: B resumes from the current status.
 
 import { kv } from '@vercel/kv';
+import { memoryQueue } from './memory_queue';
 import type { PromptPackage, Status } from './types';
 
 const key = (storyId: string) => `prompt:${storyId}`;
 const PENDING_INDEX = 'index:pending';
 const ALL_INDEX = 'index:all';
 
+function useKv(): boolean {
+  return Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+}
+
 // 🟦 A — write a new prompt package and register it in the pending index.
 export async function enqueue(pkg: PromptPackage): Promise<void> {
+  if (!useKv()) {
+    memoryQueue.enqueue(pkg);
+    return;
+  }
   await kv.set(key(pkg.story_id), pkg);
   await kv.sadd(PENDING_INDEX, pkg.story_id);
   await kv.sadd(ALL_INDEX, pkg.story_id);
@@ -20,10 +29,12 @@ export async function enqueue(pkg: PromptPackage): Promise<void> {
 
 // 🟥 B — list story ids still awaiting generation (no full keyspace scan).
 export async function listPending(): Promise<string[]> {
+  if (!useKv()) return memoryQueue.listPending();
   return (await kv.smembers<string[]>(PENDING_INDEX)) ?? [];
 }
 
 export async function get(storyId: string): Promise<PromptPackage | null> {
+  if (!useKv()) return memoryQueue.get(storyId);
   return await kv.get<PromptPackage>(key(storyId));
 }
 
@@ -37,6 +48,8 @@ export async function update(
     >
   >,
 ): Promise<PromptPackage> {
+  if (!useKv()) return memoryQueue.update(storyId, patch);
+
   const current = await get(storyId);
   if (!current) throw new Error(`unknown story ${storyId}`);
 
@@ -53,6 +66,7 @@ export async function listByStatus(status: Status): Promise<PromptPackage[]> {
 }
 
 export async function listAll(): Promise<PromptPackage[]> {
+  if (!useKv()) return memoryQueue.listAll();
   const ids = (await kv.smembers<string[]>(ALL_INDEX)) ?? [];
   const packages = await Promise.all(ids.map((id) => get(id)));
   return packages

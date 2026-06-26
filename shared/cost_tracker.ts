@@ -28,6 +28,9 @@ function budgetUsd(): number {
 }
 
 async function readLedger(): Promise<DailyCost> {
+  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+    return { total_usd: 0, stages: {} };
+  }
   return (await kv.get<DailyCost>(todayKey())) ?? { total_usd: 0, stages: {} };
 }
 
@@ -44,7 +47,9 @@ export async function recordCost(stage: CostStage, costUsd: number): Promise<voi
   const ledger = await readLedger();
   ledger.total_usd = Number((ledger.total_usd + costUsd).toFixed(6));
   ledger.stages[stage] = Number(((ledger.stages[stage] ?? 0) + costUsd).toFixed(6));
-  await kv.set(todayKey(), ledger);
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    await kv.set(todayKey(), ledger);
+  }
 }
 
 export async function guardPaidCall(
