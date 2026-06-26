@@ -8,7 +8,11 @@
     "run-a": "tsx api/run-a.ts",
     "run-a:dry": "tsx api/run-a.ts --dry",
     "typecheck": "tsc --noEmit",
-    "dev": "vercel dev",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "tsx scripts/dev-api.ts",
+    "dev:api:vercel": "vercel dev --yes --listen 3000",
+    "dev:web": "npm run dev --prefix web",
+    "build:web": "npm run build --prefix web",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^22.13.10",
     "@vercel/node": "^5.1.8",
+    "concurrently": "^9.1.2",
     "tsx": "^4.19.1",
     "typescript": "^5.8.2"
   }
