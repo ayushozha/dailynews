@@ -1,4 +1,5 @@
 import { guardPaidCall, recordCost } from '../shared/cost_tracker';
+import { MINIMAX_VIDEO_MODEL } from '../shared/minimax_models';
 import { logStage } from '../shared/log';
 import { downloadFile, minimaxFetch } from '../shared/minimax';
 import * as queue from '../shared/queue';
@@ -106,7 +107,7 @@ export async function generateVideo(
       const task = await minimaxFetch<VideoTaskResponse>('/v1/video_generation', {
         method: 'POST',
         body: JSON.stringify({
-          model: 'MiniMax-Hailuo-2.3-Fast',
+          model: MINIMAX_VIDEO_MODEL,
           first_frame_image: imageUrl,
           prompt: pkg.motion_prompt,
           duration: 6,

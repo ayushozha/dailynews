@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { guardPaidCall, recordCost } from '../shared/cost_tracker';
+import { MINIMAX_TTS_MODEL } from '../shared/minimax_models';
 import { logStage } from '../shared/log';
 import { minimaxFetch } from '../shared/minimax';
 import type { PromptPackage } from '../shared/types';
@@ -48,7 +49,7 @@ async function synthesizeSpeech(pkg: PromptPackage): Promise<Buffer> {
   const body = await minimaxFetch<TtsResponse>('/v1/t2a_v2', {
     method: 'POST',
     body: JSON.stringify({
-      model: 'speech-2.8-turbo',
+      model: MINIMAX_TTS_MODEL,
       text: pkg.voiceover_script,
       stream: false,
       language_boost: 'English',

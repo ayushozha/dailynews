@@ -20,6 +20,7 @@ export interface PromptPackage {
   output_url: string; // 🟥 B — final published URL
   video_task_id?: string; // 🟥 B — in-flight Hailuo task for resume
   created_at: string; // 🟦 A — ISO8601
+  source_headlines?: string[]; // optional — headlines fused into this meme
 }
 
 export interface RawStory {

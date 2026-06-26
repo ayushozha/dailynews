@@ -13,6 +13,7 @@
   "functions": {
     "api/run-a.ts": { "maxDuration": 300, "memory": 3009 },
     "api/run-b.ts": { "maxDuration": 300, "memory": 3009 },
-    "api/local-asset.ts": { "maxDuration": 30 }
+    "api/local-asset.ts": { "maxDuration": 30 },
+    "api/generate-meme.ts": { "maxDuration": 300, "memory": 3009 }
   }
 }

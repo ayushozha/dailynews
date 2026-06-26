@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { head, list, put } from '@vercel/blob';
 import { guardPaidCall, getDailySpend, recordCost } from '../shared/cost_tracker';
 import { logStage } from '../shared/log';
@@ -40,6 +42,20 @@ async function findExistingBlobUrl(pathname: string): Promise<string | null> {
   return match?.url ?? null;
 }
 
+async function saveLocalAsset(
+  storyId: string,
+  kind: 'image' | 'video' | 'final',
+  buffer: Buffer,
+  contentType: string,
+): Promise<string> {
+  const ext = contentType.includes('png') ? 'png' : 'mp4';
+  const filename = kind === 'image' ? `captioned.${ext}` : kind === 'video' ? 'clip.mp4' : 'final.mp4';
+  const dir = join(process.cwd(), 'output', storyId);
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, filename), buffer);
+  return `/api/local-asset?storyId=${encodeURIComponent(storyId)}&file=${filename}`;
+}
+
 export async function uploadToBlob(
   storyId: string,
   kind: 'image' | 'video' | 'final',
@@ -47,6 +63,10 @@ export async function uploadToBlob(
   contentType: string,
   existingUrl?: string,
 ): Promise<string> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    return saveLocalAsset(storyId, kind, buffer, contentType);
+  }
+
   const guard = await guardPaidCall('blob_upload');
   if (!guard.allowed) throw new Error('Daily budget exceeded before blob upload');
 

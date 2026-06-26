@@ -1,4 +1,5 @@
 import { guardPaidCall, recordCost } from '../shared/cost_tracker';
+import { MINIMAX_IMAGE_MODEL } from '../shared/minimax_models';
 import { logStage } from '../shared/log';
 import { minimaxFetch } from '../shared/minimax';
 import type { PromptPackage } from '../shared/types';
@@ -31,7 +32,7 @@ export async function generateImage(pkg: PromptPackage): Promise<ImageGenResult>
     const body = await minimaxFetch<ImageGenResponse>('/v1/image_generation', {
       method: 'POST',
       body: JSON.stringify({
-        model: 'image-01',
+        model: MINIMAX_IMAGE_MODEL,
         prompt: pkg.image_prompt,
         aspect_ratio: '1:1',
         response_format: 'base64',
