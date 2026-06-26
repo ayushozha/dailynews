@@ -1,5 +1,4 @@
 // ⬜ Shared — PromptPackage / Status types (interface contract). See DESIGN.md §6.
-// TODO: implement
 
 export type Tone = 'absurd' | 'political' | 'wholesome';
 
