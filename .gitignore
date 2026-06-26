@@ -1,6 +1,10 @@
 node_modules/
 dist/
+output/
+mcps/
 .env
 .env.local
 .vercel/
 *.log
+.DS_Store
+Thumbs.db
