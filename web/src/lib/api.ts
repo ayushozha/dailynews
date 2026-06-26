@@ -66,8 +66,8 @@ export interface SearchNewsResult {
 export const searchNews = (query: string) =>
   api<SearchNewsResult>(`/api/search-news?q=${encodeURIComponent(query)}`);
 
-export const generateMeme = (query: string) =>
+export const generateMeme = (query: string, stories: NewsHeadline[]) =>
   api<{ ok: boolean; message: string; query: string }>('/api/generate-meme', {
     method: 'POST',
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, stories }),
   });

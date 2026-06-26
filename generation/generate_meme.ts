@@ -4,10 +4,12 @@ import { pickFiveRelated } from '../data/pick_related';
 import { searchNews } from '../data/search_news';
 import { synthesizeMemeFromFive } from '../data/meme_synthesizer';
 import { enqueue } from '../shared/queue';
+import type { ScoredStory } from '../shared/types';
 import { processStoryToCompletion } from './pipeline';
 
 export interface GenerateMemeOptions {
   query?: string;
+  stories?: ScoredStory[];
 }
 
 export interface GenerateMemeResult {
@@ -26,7 +28,11 @@ export async function generateMeme(options: GenerateMemeOptions = {}): Promise<G
   let picked;
   let theme: string;
 
-  if (query) {
+  if (options.stories && options.stories.length >= 5) {
+    console.log(`▶ [generate-meme] use ${options.stories.length} previewed stories`);
+    picked = options.stories.slice(0, 5);
+    theme = query || 'selected headlines';
+  } else if (query) {
     console.log(`▶ [generate-meme] search news for "${query}"`);
     const search = await searchNews(query);
     picked = search.stories;

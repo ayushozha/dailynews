@@ -7,7 +7,7 @@ export const NEWS_PICK_COUNT = 5;
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter((w) => w.length > 2);
 }
@@ -15,8 +15,8 @@ function tokenize(text: string): string[] {
 function queryMatchScore(story: ScoredStory, query: string): number {
   const qTokens = tokenize(query);
   if (qTokens.length === 0) return 0;
-  const doc = `${story.title} ${story.summary}`.toLowerCase();
-  const hits = qTokens.filter((t) => doc.includes(t)).length;
+  const docTokens = new Set(tokenize(`${story.title} ${story.summary}`));
+  const hits = qTokens.filter((t) => docTokens.has(t)).length;
   return hits / qTokens.length;
 }
 

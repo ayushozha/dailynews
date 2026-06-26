@@ -91,9 +91,17 @@ export default function App() {
     }
   };
 
+  const onSearchQueryChange = (value: string) => {
+    setSearchQuery(value);
+    if (activeQuery && value.trim() !== activeQuery) {
+      setHeadlines([]);
+      setActiveQuery(null);
+    }
+  };
+
   const onGenerateMeme = async () => {
-    const q = activeQuery ?? searchQuery.trim();
-    if (!q) {
+    const q = searchQuery.trim();
+    if (!activeQuery || q !== activeQuery) {
       setError('Search for a topic first — we need 5 live headlines to fuse into a meme.');
       return;
     }
@@ -104,7 +112,7 @@ export default function App() {
     setGenerating(true);
     setError(null);
     try {
-      const result = await generateMeme(q);
+      const result = await generateMeme(activeQuery, headlines);
       setToast(result.message);
       await refresh();
     } catch (e) {
@@ -203,7 +211,7 @@ export default function App() {
               <Input
                 placeholder='Search news — e.g. "OpenAI", "climate summit", "NBA finals"'
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => onSearchQueryChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && onSearchNews()}
                 disabled={searching || generating}
                 className="flex-1"
@@ -248,7 +256,7 @@ export default function App() {
             <div className="flex flex-wrap gap-3">
               <Button
                 onClick={onGenerateMeme}
-                disabled={generating || headlines.length < 5}
+                disabled={generating || searching || headlines.length < 5}
                 size="lg"
                 variant="accent"
                 className="min-w-[220px]"
