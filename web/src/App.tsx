@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Activity,
   Clapperboard,
+  ExternalLink,
   Flame,
   Loader2,
   Newspaper,
   RefreshCw,
+  Search,
   Sparkles,
   Zap,
 } from 'lucide-react';
@@ -13,6 +15,7 @@ import { StoryCard } from '@/components/story-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -20,7 +23,9 @@ import {
   fetchStatus,
   fetchStories,
   generateMeme,
+  searchNews,
   type DashboardStatus,
+  type NewsHeadline,
   type Story,
 } from '@/lib/api';
 
@@ -30,6 +35,10 @@ export default function App() {
   const [source, setSource] = useState<'kv' | 'local'>('local');
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [headlines, setHeadlines] = useState<NewsHeadline[]>([]);
+  const [activeQuery, setActiveQuery] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -60,11 +69,42 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  const onSearchNews = async () => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setError('Enter a topic to search — e.g. "AI regulation", "Taylor Swift", "Ukraine"');
+      return;
+    }
+    setSearching(true);
+    setError(null);
+    setHeadlines([]);
+    setActiveQuery(null);
+    try {
+      const result = await searchNews(q);
+      setHeadlines(result.stories);
+      setActiveQuery(result.query);
+      setToast(`Found ${result.count} live headlines from ${result.sources_used.join(', ')}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'News search failed');
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const onGenerateMeme = async () => {
+    const q = activeQuery ?? searchQuery.trim();
+    if (!q) {
+      setError('Search for a topic first — we need 5 live headlines to fuse into a meme.');
+      return;
+    }
+    if (headlines.length < 5) {
+      setError('Run a search first so we can scrape 5 related headlines.');
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
-      const result = await generateMeme();
+      const result = await generateMeme(q);
       setToast(result.message);
       await refresh();
     } catch (e) {
@@ -101,8 +141,8 @@ export default function App() {
               Daily<span className="text-sky underline decoration-coral decoration-4 underline-offset-4">News</span>
             </h1>
             <p className="max-w-xl text-lg text-muted-foreground">
-              Grab 5 related headlines, fuse them into one unhinged mega-meme, ship it with MiniMax
-              Hailuo + TTS. One button. Maximum chaos.
+              Search any topic, scrape 5 live headlines from Google News + GDELT, fuse them into one
+              unhinged mega-meme, ship it with MiniMax Hailuo + TTS.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -154,16 +194,61 @@ export default function App() {
           <CardHeader>
             <CardTitle>Make today&apos;s meme</CardTitle>
             <CardDescription>
-              Crawls the news, picks 5 related stories, writes a super-funny combined meme, then
-              generates image + video + voiceover with the latest MiniMax models. Keys stay in{' '}
-              <code className="rounded bg-muted px-1">.env</code>.
+              Type a topic — we scrape 5 live stories in real time (Google News RSS + GDELT), then
+              fuse them into a super-funny meme with MiniMax image + video + voiceover.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                placeholder='Search news — e.g. "OpenAI", "climate summit", "NBA finals"'
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onSearchNews()}
+                disabled={searching || generating}
+                className="flex-1"
+              />
+              <Button onClick={onSearchNews} disabled={searching || generating} size="lg">
+                {searching ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : (
+                  <Search className="h-5 w-5" />
+                )}
+                {searching ? 'Scraping…' : 'Search news'}
+              </Button>
+            </div>
+
+            {headlines.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-sky/20 bg-sky-50/50 p-4">
+                <p className="text-sm font-semibold text-sky-900">
+                  5 headlines for &ldquo;{activeQuery}&rdquo;
+                </p>
+                <ol className="space-y-2 text-sm">
+                  {headlines.map((h, i) => (
+                    <li key={h.url} className="flex gap-2">
+                      <span className="font-mono text-muted-foreground">{i + 1}.</span>
+                      <div className="min-w-0 flex-1">
+                        <a
+                          href={h.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-foreground hover:text-sky hover:underline"
+                        >
+                          {h.title}
+                          <ExternalLink className="ml-1 inline h-3 w-3 opacity-50" />
+                        </a>
+                        <span className="ml-2 text-xs text-muted-foreground">({h.source})</span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-3">
               <Button
                 onClick={onGenerateMeme}
-                disabled={generating}
+                disabled={generating || headlines.length < 5}
                 size="lg"
                 variant="accent"
                 className="min-w-[220px]"
@@ -206,7 +291,7 @@ export default function App() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {['Crawl headlines', 'Pick 5 related', 'LLM mega-joke', 'MiniMax image', 'Hailuo video', 'TTS + merge'].map(
+            {['Search & scrape 5', 'LLM mega-joke', 'MiniMax image', 'Hailuo video', 'TTS + merge'].map(
               (step) => (
                 <div key={step} className="flex items-center gap-2 rounded-lg bg-white/80 px-3 py-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-sky" />
@@ -255,8 +340,8 @@ function StoryGrid({ stories, loading }: { stories: Story[]; loading: boolean })
           <Flame className="h-10 w-10 text-coral" />
           <p className="font-display text-xl">No memes yet</p>
           <p className="max-w-md text-sm text-muted-foreground">
-            Hit <strong>Generate Mega-Meme</strong> — we&apos;ll find 5 related headlines and turn
-            them into something unforgivably funny.
+            Search a topic, then hit <strong>Generate Mega-Meme</strong> — we&apos;ll fuse those 5
+            headlines into something unforgivably funny.
           </p>
         </CardContent>
       </Card>

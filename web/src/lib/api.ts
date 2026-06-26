@@ -46,5 +46,28 @@ export const fetchStatus = () => api<DashboardStatus>('/api/status');
 export const fetchStories = () =>
   api<{ stories: Story[]; source: 'kv' | 'local' }>('/api/stories');
 
-export const generateMeme = () =>
-  api<{ ok: boolean; message: string }>('/api/generate-meme', { method: 'POST' });
+export interface NewsHeadline {
+  title: string;
+  url: string;
+  source: string;
+  published_at: string;
+  summary: string;
+  relevance: number;
+}
+
+export interface SearchNewsResult {
+  ok: boolean;
+  query: string;
+  count: number;
+  sources_used: string[];
+  stories: NewsHeadline[];
+}
+
+export const searchNews = (query: string) =>
+  api<SearchNewsResult>(`/api/search-news?q=${encodeURIComponent(query)}`);
+
+export const generateMeme = (query: string) =>
+  api<{ ok: boolean; message: string; query: string }>('/api/generate-meme', {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+  });

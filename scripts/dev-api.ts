@@ -11,6 +11,7 @@ import { runPersonA } from '../api/run-a';
 import * as statusRoute from '../api/status';
 import * as storiesRoute from '../api/stories';
 import { generateMeme } from '../generation/generate_meme';
+import * as searchNewsRoute from '../api/search-news';
 
 const PORT = Number(process.env.API_PORT ?? 3000);
 
@@ -81,12 +82,37 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (path === '/api/search-news' && req.method === 'GET') {
+      const response = await searchNewsRoute.GET(
+        new Request(`http://localhost${url.search}`, { method: 'GET' }),
+      );
+      res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+      res.end(await response.text());
+      return;
+    }
+
     if (path === '/api/generate-meme' && req.method === 'POST') {
+      let query: string | undefined;
+      try {
+        const body = await readBody(req);
+        if (body) query = (JSON.parse(body) as { query?: string }).query?.trim();
+      } catch {
+        /* empty body is fine */
+      }
+
+      if (!query) {
+        return sendJson(res, 400, {
+          error: 'query_required',
+          message: 'Search for a topic first, then generate a meme from those 5 headlines.',
+        });
+      }
+
       sendJson(res, 202, {
         ok: true,
-        message: 'Fetching 5 related headlines and cooking a mega-meme with MiniMax…',
+        query,
+        message: `Scraping 5 live headlines for "${query}" and cooking a mega-meme with MiniMax…`,
       });
-      generateMeme()
+      generateMeme({ query })
         .then((r) => console.log('[generate-meme] done', r))
         .catch((err) => console.error('[generate-meme] error', err));
       return;
@@ -103,5 +129,5 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`▶ DailyNews dev API → http://127.0.0.1:${PORT}`);
-  console.log('  Routes: /api/status /api/stories /api/generate-meme /api/local-asset');
+  console.log('  Routes: /api/status /api/stories /api/search-news /api/generate-meme /api/local-asset');
 });

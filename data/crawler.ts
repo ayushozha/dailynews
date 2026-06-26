@@ -116,3 +116,83 @@ export async function crawl(): Promise<RawStory[]> {
   });
   return stories;
 }
+
+// --- Query-scoped sources (real-time search) ---
+
+async function fromGoogleNewsSearch(query: string): Promise<RawStory[]> {
+  const q = encodeURIComponent(query.trim());
+  const feed = await rss.parseURL(
+    `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`,
+  );
+  return (feed.items ?? []).slice(0, PER_SOURCE_LIMIT).map((i) => ({
+    title: i.title ?? '',
+    url: i.link ?? '',
+    source: 'google-news',
+    published_at: i.isoDate ?? i.pubDate ?? new Date().toISOString(),
+    summary: i.contentSnippet ?? i.content ?? '',
+  }));
+}
+
+async function fromGdeltSearch(query: string): Promise<RawStory[]> {
+  const q = encodeURIComponent(`${query.trim()} sourcelang:english`);
+  const url =
+    `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}` +
+    `&mode=ArtList&format=json&maxrecords=${PER_SOURCE_LIMIT}&sort=DateDesc`;
+  const res = await fetchWithTimeout(url);
+  if (!res.ok) throw new Error(`GDELT ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as {
+    articles?: { title: string; url: string; seendate: string }[];
+  };
+  return (json.articles ?? []).map((a) => ({
+    title: a.title ?? '',
+    url: a.url ?? '',
+    source: 'gdelt',
+    published_at: parseGdeltDate(a.seendate),
+    summary: '',
+  }));
+}
+
+async function fromNewsApiSearch(query: string): Promise<RawStory[]> {
+  const key = process.env.NEWS_API_KEY;
+  if (!key) throw new Error('NEWS_API_KEY not set');
+  const q = encodeURIComponent(query.trim());
+  const url = `https://newsapi.org/v2/everything?q=${q}&language=en&sortBy=publishedAt&pageSize=${PER_SOURCE_LIMIT}&apiKey=${key}`;
+  const res = await fetchWithTimeout(url);
+  if (!res.ok) throw new Error(`NewsAPI ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as {
+    articles?: { title: string; url: string; publishedAt: string; description?: string }[];
+  };
+  return (json.articles ?? []).map((a) => ({
+    title: a.title ?? '',
+    url: a.url ?? '',
+    source: 'newsapi',
+    published_at: a.publishedAt ?? new Date().toISOString(),
+    summary: a.description ?? '',
+  }));
+}
+
+const QUERY_SOURCES: { name: string; fn: (q: string) => Promise<RawStory[]> }[] = [
+  { name: 'google-news-search', fn: fromGoogleNewsSearch },
+  { name: 'gdelt-search', fn: fromGdeltSearch },
+  { name: 'newsapi-search', fn: fromNewsApiSearch },
+];
+
+/** Fetch headlines for a user search query from Google News RSS, GDELT, and optional NewsAPI. */
+export async function crawlByQuery(query: string): Promise<RawStory[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const results = await Promise.allSettled(QUERY_SOURCES.map((s) => s.fn(trimmed)));
+  const stories: RawStory[] = [];
+  results.forEach((r, i) => {
+    const name = QUERY_SOURCES[i].name;
+    if (r.status === 'fulfilled') {
+      const valid = r.value.filter((s) => s.title && s.url);
+      console.log(`   crawler[${trimmed}]: ${name} -> ${valid.length} stories`);
+      stories.push(...valid);
+    } else {
+      console.warn(`   crawler[${trimmed}]: ${name} FAILED -> ${r.reason?.message ?? r.reason}`);
+    }
+  });
+  return stories;
+}
